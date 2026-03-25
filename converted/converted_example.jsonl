@@ -1,2 +1,3 @@
-{"input": "request 1 full contents", "output_length": 100}, 
-{"input": "request 2 full contents", "output_length": 80}
+{"input": "request 1 input", "output_length": 100}, 
+{"input": "request 1 input + request 1 output + request 2 input", "output_length": 80}
+{"input": "request 1 input + request 1 output + request 2 input + request 2 output + request 3 input", "output_length": 60}
