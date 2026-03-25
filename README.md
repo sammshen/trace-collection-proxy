@@ -15,7 +15,7 @@ pip install fastapi httpx uvicorn
 bash launch_vllm.sh
 
 # 2. Start the proxy (points at vLLM on :8200, listens on :8201)
-python3 instrumented_proxy.py
+python instrumented_proxy.py
 ```
 
 Point your clients at `http://<host>:8201` instead of the backend directly.
@@ -23,19 +23,80 @@ Point your clients at `http://<host>:8201` instead of the backend directly.
 ## Session Recording
 
 ```bash
-# Start a session — begins logging to traces/my_session_trace.jsonl
+# Start a session
 curl -X POST localhost:8201/session/start -d '{"name": "my_session"}'
 
-# Check status — active session, request count, past sessions, saved files
+# Check status
 curl localhost:8201/session/status
 
-# End session — stops logging, closes the file
+# End session
 curl -X POST localhost:8201/session/end
+
+# View the trace
+cat traces/my_session_trace.jsonl | python -m json.tool
+```
+
+### Single Request
+
+```bash
+curl -X POST localhost:8201/session/start -d '{"name": "single_request"}'
+
+curl localhost:8201/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "MiniMaxAI/MiniMax-M2.5", "messages": [{"role": "user", "content": "hello"}]}'
+
+curl -X POST localhost:8201/session/end
+
+python converter.py traces/single_request_trace.jsonl converted/single_request.jsonl
+```
+
+### Multi-Turn Conversation
+
+```bash
+curl -X POST localhost:8201/session/start -d '{"name": "test_multiturn"}'
+
+python test_multiturn.py
+
+curl -X POST localhost:8201/session/end
+
+python converter.py traces/test_multiturn_trace.jsonl converted/test_multiturn.jsonl
+```
+
+Sends 4 turns with growing conversation history. Each request includes the full `messages` array (system + all prior user/assistant turns), so the trace captures the complete context at every step.
+
+### Converter
+
+`converter.py` converts a trace into a simple replay format — one JSON per line with the stringified conversation and expected output length.
+
+```bash
+python converter.py <trace.jsonl> <output.jsonl>
+```
+
+Output format:
+
+```json
+{"input": "[system] You are a helpful assistant.\n[user] hello", "output_length": 42}
+```
+
+## Terminal Output
+
+The proxy prints color-coded live output:
+
+```
+>>> POST /v1/chat/completions  model=MiniMax-M2.5 | 3 msgs | last=user: hello
+<<< 200 /v1/chat/completions (1523ms)  The answer is 4. | tok=45/12
+
+[REC] >>> POST /v1/chat/completions  ...    # [REC] = session active
+<<< 200 /v1/chat/completions (2301ms) [stream]  ...
+
+==========================================
+[SESSION] STARTED: experiment_1  -> traces/experiment_1_trace.jsonl
+==========================================
 ```
 
 ## Trace Format
 
-Each line in `{name}_trace.jsonl` is a JSON object:
+Each line in `traces/{name}_trace.jsonl` is a JSON object:
 
 ```jsonc
 // Request (from client)
@@ -48,7 +109,7 @@ Each line in `{name}_trace.jsonl` is a JSON object:
 - `timestamp_rel_s` — seconds since session start
 - `request_id` — links each request to its response
 - Full conversation history (`messages` array) is captured on every request
-- Streaming responses have SSE events parsed into `body_parsed_events`
+- Streaming responses are assembled into the same format as non-streaming
 
 ## Config
 
