@@ -60,6 +60,8 @@ python test_multiturn.py
 curl -X POST localhost:8201/session/end
 
 python converter.py traces/test_multiturn_trace.jsonl converted/test_multiturn.jsonl
+python converter.py traces/nyc_house_trace.jsonl converted/nyc_house_trace.jsonl
+
 ```
 
 Sends 4 turns with growing conversation history. Each request includes the full `messages` array (system + all prior user/assistant turns), so the trace captures the complete context at every step.
