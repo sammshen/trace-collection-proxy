@@ -140,6 +140,22 @@ Each line in a converted file represents one LLM request with the **full convers
 
 Each request is a superset of the previous one — this is how the OpenAI chat completions API works. The LLM needs the full history to maintain context. See `converted/converted_example.jsonl` for a complete 4-turn example showing this pattern.
 
+### Anonymizer
+
+`anonymizer.py` redacts PII from converted traces before publishing. It catches emails, phone numbers, IP addresses, file paths, API keys, SSH keys, credit cards, and SSNs using regex patterns.
+
+```bash
+# Regex-only (no dependencies)
+python anonymizer.py converted/aggregated.jsonl converted/aggregated_anon.jsonl
+
+# With Presidio for NER-based detection (names, addresses, etc.)
+pip install presidio-analyzer presidio-anonymizer spacy
+python -m spacy download en_core_web_lg
+python anonymizer.py converted/aggregated.jsonl converted/aggregated_anon.jsonl --presidio
+```
+
+Redacted values are replaced with tags like `<EMAIL>`, `<FILE_PATH>`, `<IP_ADDRESS>`, etc. The conversation structure and token counts are preserved.
+
 ## Terminal Output
 
 The proxy prints color-coded live output:
