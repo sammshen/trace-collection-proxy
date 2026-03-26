@@ -68,17 +68,77 @@ Sends 4 turns with growing conversation history. Each request includes the full 
 
 ### Converter
 
-`converter.py` converts a trace into a simple replay format — one JSON per line with the stringified conversation and expected output length.
+`converter.py` converts a raw proxy trace into [AIPerf Mooncake-compatible](https://github.com/ai-dynamo/aiperf) format — one JSON per line with the original OpenAI `messages` array and output token count.
 
 ```bash
 python converter.py <trace.jsonl> <output.jsonl>
+
+# Convert all traces
+for f in traces/*_trace.jsonl; do
+  python converter.py "$f" "converted/$(basename $f)"
+done
 ```
 
 Output format:
 
 ```json
-{"input": "[system] You are a helpful assistant.\n[user] hello", "output_length": 42}
+{"messages": [{"role": "system", "content": "..."}, {"role": "user", "content": "hello"}], "output_length": 42}
+{"messages": [...], "output_length": 35, "tools": [{"type": "function", "function": {"name": "web_search", ...}}]}
 ```
+
+Each converted file is a single session. See `converted/converted_example.jsonl` for a dummy example and `converted/FORMAT.md` for the full spec.
+
+### Aggregator
+
+`aggregator.py` combines all per-session converted traces into a single file, adding `session_id` to each entry.
+
+```bash
+# Basic aggregation (14 sessions)
+python aggregator.py converted/aggregated.jsonl
+
+# Duplicate sessions to increase concurrency headroom (14 x 10 = 140 sessions)
+python aggregator.py converted/aggregated.jsonl --duplicate 10
+```
+
+Output:
+
+```json
+{"messages": [...], "output_length": 42, "session_id": "ai_fashion_industry"}
+```
+
+When using `--duplicate N`, the first replica of each session is unchanged. Subsequent replicas get a unique prefix breaker (`[session-id: ai_fashion_industry_r1]`) prepended to the first message so they don't share KV cache prefixes with the original. This is important for realistic benchmarking — without it, duplicated sessions would get artificial cache hits.
+
+### Replay with AIPerf
+
+```bash
+aiperf profile \
+  --input-file converted/aggregated.jsonl \
+  --custom-dataset-type mooncake_trace \
+  --endpoint-type chat \
+  --model <model_name> \
+  --url <server_url>/v1 \
+  --concurrency 10
+```
+
+`--concurrency` sets how many sessions run in parallel. Within each session, turns are strictly sequential — each turn waits for the previous response before sending, since each request depends on the prior response (e.g. tool call results get appended to the history). AIPerf groups turns by `session_id` and uses sticky routing so all turns in a session go to the same worker.
+
+If you need higher concurrency than the number of sessions, use `--duplicate` in the aggregator to create more sessions. AIPerf's `--dataset-sampling-strategy sequential` (the default for traces) will wrap around when it runs out of sessions, but wrapped sessions will have identical prefixes. `--duplicate` avoids this by giving each replica a unique prefix.
+
+Other useful flags:
+- `--concurrency-ramp-duration <secs>` — gradually ramp from 1 to target concurrency
+- `--prefill-concurrency <n>` — limit how many requests can be in the prefill phase at once
+- `--user-centric-rate --num-users <n>` — alternative mode that simulates N users with realistic inter-turn delays
+
+### Trace structure
+
+Each line in a converted file represents one LLM request with the **full conversation history** as the client sent it. In agentic tool-use sessions, the pattern looks like:
+
+1. `[system, user]` — initial request with tool definitions
+2. `[system, user, assistant(tool_call), tool(result)]` — LLM called a tool, client executed it and sent the result back
+3. `[system, user, assistant(tool_call), tool(result), assistant(tool_call), tool(result)]` — another tool call round
+4. ...continues until the LLM produces a final text response
+
+Each request is a superset of the previous one — this is how the OpenAI chat completions API works. The LLM needs the full history to maintain context. See `converted/converted_example.jsonl` for a complete 4-turn example showing this pattern.
 
 ## Terminal Output
 

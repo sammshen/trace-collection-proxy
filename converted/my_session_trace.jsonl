@@ -1,1 +1,1 @@
-{"input": "[user] hello", "output_length": 43}
+{"messages": [{"role": "user", "content": "hello"}], "output_length": 43}
