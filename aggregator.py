@@ -28,7 +28,9 @@ def _add_prefix_breaker(entry: dict, replica_id: str) -> dict:
     if not messages:
         return entry
 
-    target = messages[0]
+    target = next((m for m in messages if m.get("role") == "user"), None)
+    if target is None:
+        return entry
     content = target.get("content", "")
     breaker = f"[session-id: {replica_id}]\n"
 

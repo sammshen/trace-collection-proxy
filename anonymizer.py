@@ -130,11 +130,9 @@ def anonymize_content(content, use_presidio: bool = False) -> any:
     return content
 
 
-def anonymize_entry(entry: dict, use_presidio: bool = False) -> dict:
-    """Anonymize a single converted trace entry."""
-    entry = json.loads(json.dumps(entry))  # deep copy
-
-    for msg in entry.get("messages", []):
+def _anonymize_messages(messages: list, use_presidio: bool = False):
+    """Anonymize a list of message dicts in place."""
+    for msg in messages:
         if "content" in msg and msg["content"] is not None:
             msg["content"] = anonymize_content(msg["content"], use_presidio)
 
@@ -143,6 +141,33 @@ def anonymize_entry(entry: dict, use_presidio: bool = False) -> dict:
             fn = tc.get("function", {})
             if "arguments" in fn:
                 fn["arguments"] = anonymize_content(fn["arguments"], use_presidio)
+
+
+def anonymize_entry(entry: dict, use_presidio: bool = False) -> dict:
+    """Anonymize a single trace entry (converted or raw format)."""
+    entry = json.loads(json.dumps(entry))  # deep copy
+
+    # Converted format: top-level messages
+    if "messages" in entry and entry.get("type") is None:
+        _anonymize_messages(entry["messages"], use_presidio)
+        return entry
+
+    # Raw format: request or response records from instrumented proxy
+    body = entry.get("body", {})
+    if not isinstance(body, dict):
+        return entry
+
+    if entry.get("type") == "request":
+        _anonymize_messages(body.get("messages", []), use_presidio)
+    elif entry.get("type") == "response":
+        for choice in body.get("choices", []):
+            msg = choice.get("message", {})
+            if "content" in msg and msg["content"] is not None:
+                msg["content"] = anonymize_content(msg["content"], use_presidio)
+            for tc in msg.get("tool_calls", []):
+                fn = tc.get("function", {})
+                if "arguments" in fn:
+                    fn["arguments"] = anonymize_content(fn["arguments"], use_presidio)
 
     return entry
 

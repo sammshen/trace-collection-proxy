@@ -1,0 +1,12 @@
+lmcache server \
+    --host 0.0.0.0 \
+    --port 6566 \
+    --chunk-size 512 \
+    --hash-algorithm blake3 \
+    --engine-type default \
+    --l1-size-gb 800 \
+    --l1-use-lazy \
+    --l1-init-size-gb 20 \
+    --eviction-policy LRU \
+    --eviction-trigger-watermark 0.9 \
+    --eviction-ratio 0.1

@@ -50,15 +50,14 @@ def convert(trace_path: str, output_path: str):
 
             output_len = _get_output_len(resp.get("body", {})) if resp and isinstance(resp.get("body"), dict) else 100
 
-            entry = {
-                "messages": messages,
-                "output_length": output_len,
-            }
+            entry = {"messages": messages}
 
-            # Include tools if present
+            # Include tools if present (part of input)
             tools = body.get("tools")
             if tools:
                 entry["tools"] = tools
+
+            entry["output_length"] = output_len
 
             out.write(json.dumps(entry) + "\n")
             count += 1
